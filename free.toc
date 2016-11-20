@@ -1,175 +1,102 @@
 
-;; TODO: make sure eval-free only needs to implement 'map'
-
-(defprotocol FreeEval
-  (evaluate [free-val eval-free]))
-
 (def free)
 (def free-app)
-(def free-monad)
 
-(def free-zero
-  (reify
-    Stringable
-    (string-list [_] (list "<FreeZero>"))
+(defprotocol FreeEvaluate
+  (evaluate [x eval-f]))
 
-    Eq
-    (=* [x y]
-      (type= x y))
+(deftype free-monad [v]
+  ;; (assert (implements? map v))
 
-    Container
-    (wrap [_ v] (free v))
-
-    Composition
-    (zero [ev] ev)
-    (comp* [_ mvs] mvs)))
-
-(deftype free-comp [alts]
   Stringable
   (string-list [_]
-    (comp (list "<FreeComp: ")
-          (string-list alts)
+    (comp (list "<free-monad: ")
+          (string-list v)
           (list ">")))
 
-  FreeEval
-  (evaluate [free-val eval-free]
-    (let [[alt & alts] alts]
-      (comp* (evaluate alt eval-free)
-             (map alts (fn [alt]
-                         (evaluate alt eval-free))))))
+  FreeEvaluate
+  (evaluate [_ f]
+    (f (map v (fn [y]
+                (evaluate y f)))))
 
   Container
   (map [fv f]
-    (free-app (free f) (list fv)))
+    (free-app (free f) (list fv))
+    ;; (free-monad (map v (fn [y]
+    ;;                      (free (evaluate y f)))))
+    )
   (wrap [_ v] (free v))
-  (apply* [fv args]
-    (free-app fv args))
-  (flat-map [fv ff]
-    (free-monad fv ff))
-  (extract [_] alts)
+  (apply* [f args]
+    (free-app f args))
+  (flat-map [_ f]
+    (free-monad (map v (fn [y]
+                         (flat-map y f))))))
 
-  Composition
-  (zero [ev] free-zero)
-  (comp* [mv mvs]
-    (free-comp (cons mv mvs))))
+(deftype app-fn [v]
+  FreeEvaluate
+  (evaluate [_ f]
+    (fn [& args]
+      (evaluate (apply v args) f))))
 
-(deftype free-app [fv args]
+(defprotocol FreeApply
+  (free-apply [f vs]
+    (apply* f vs)))
+
+(extend-type Function
+  FreeApply
+  (free-apply [f vs]
+    (apply f vs)))
+
+(deftype free-app [v args]
+  ;; (assert (implements? evaluate v))
+
   Stringable
   (string-list [_]
-    (comp (list "<FreeApp: ")
-          (string-list fv)
-          (list " ")
-          (string-list args)
-          (list ">")))
+    (comp (list "<free-app: ")
+          (string-list v)
+          (list " (")
+          (interpose (flat-map args string-list) " ")
+          (list ")>")))
 
-  FreeEval
-  (evaluate [free-val eval-free]
-    (let [args (map args (fn [arg]
-                           (evaluate arg eval-free)))
-          f (evaluate fv eval-free)]
-      (apply* f args)))
-
-  Container
-  (map [fv f]
-    (free-app (free f) (list fv)))
-  (wrap [_ v] (free v))
-  (apply* [fv args]
-    (free-app fv args))
-  (flat-map [fv ff]
-    (free-monad fv ff))
-  (extract [_]
-    (list fv args))
-
-  Composition
-  (zero [ev]
-    free-zero)
-  (comp* [mv mvs]
-    (free-comp (cons mv mvs))))
-
-(deftype free-monad [fv ff]
-  Stringable
-  (string-list [_]
-    (comp (list "<FreeMonad: ")
-          (string-list fv)
-          (list " ")
-          (string-list ff)
-          (list ">")))
-
-  FreeEval
-  (evaluate [free-val eval-free]
-    (flat-map (evaluate fv eval-free)
-              (fn [v]
-                (evaluate (ff v) eval-free))))
+  FreeEvaluate
+  (evaluate [_ f]
+    (free-apply (evaluate v f)
+                (map args (fn [v]
+                            (evaluate v f)))))
 
   Container
-  (map [fv f]
-    (free-app (free f) (list fv)))
+  (map [_ f]
+    (free-app (map v (fn [g]
+                       (fn [& args]
+                         (f (apply g args)))))
+              args))
   (wrap [_ v] (free v))
-  (apply* [fv args]
-    (free-app fv args))
-  (flat-map [fv ff]
-    (free-monad fv ff))
-
-  Composition
-  (zero [ev]
-    free-zero)
-  (comp* [mv mvs]
-    (free-comp (cons mv mvs))))
+  (apply* [f args]
+    (free-app f args))
+  (flat-map [fv f]
+    (free-app (app-fn (fn [fx & xs]
+                        (f (apply fx xs))))
+              (cons v args))))
 
 (deftype free [v]
   Stringable
   (string-list [_]
-    (comp (list "<Free: ")
+    (comp (list "<free: ")
           (string-list v)
           (list ">")))
 
-  FreeEval
-  (evaluate [free-val eval-free]
-    (eval-free v))
+  FreeEvaluate
+  (evaluate [_ eval-f]
+    (eval-f v))
 
   Container
   (map [fv f]
     (free-app (free f) (list fv)))
-  (wrap [_ v]
-    (free v))
-  (apply* [fv args]
-    (free-app fv args))
-  (flat-map [fv ff]
-    (free-monad fv ff))
-  (extract [_] v)
+  (wrap [_ v] (free v))
+  (apply* [f args]
+    (free-app f args))
+  (flat-map [_ f]
+    (f v)))
 
-  Composition
-  (zero [_]
-    free-zero)
-  (comp* [mv mvs]
-    (free-comp (cons mv mvs))))
-
-;; (add-ns id (module "core/id.toc"))
-;; (main [_]
-;;       (let [double (fn [x]
-;;                      (* 2 x))]
-;;         ;; check the functor and applicative laws for free
-;;         (println :free)
-;;         (println :functor-1 (= (evaluate (map (free 5) identity) id/id-m)
-;;                                (evaluate (free 5) id/id-m)))
-;;         (println :functor-2 (= (evaluate (map (map (free 2) inc) double) id/id-m)
-;;                                (evaluate (map (free 2) (comp inc double)) id/id-m)))
-;;         (println :apply-1 (= (evaluate (map (free 5) inc) id/id-m)
-;;                              (evaluate (apply-to inc (free 5)) id/id-m)))
-;;         (println :apply-2 (= (evaluate (free 5) id/id-m)
-;;                              (evaluate (apply-to identity (free 5)) id/id-m)))
-;;         (let [v1 (free "first ")
-;;               v2 (free "second ")
-;;               v3 (free "third")]
-;;           (println :apply-3 (= (evaluate (apply-to comp (apply-to comp v1 v2) v3) id/id-m)
-;;                                (evaluate (apply-to comp v1 (apply-to comp v2 v3)) id/id-m)
-;;                                (evaluate (apply-to comp v1 v2 v3) id/id-m))))
-
-;;         (let [f-inc (fn [x] (free (inc x)))
-;;               f-dbl (fn [x] (free (double x)))]
-;;           (println :flat-map-1 (= (evaluate (flat-map (free 4) f-inc) id/id-m)
-;;                                   (evaluate (f-inc 4) id/id-m)))
-;;           (println :flat-map-2 (= (evaluate (flat-map (free 4) free) id/id-m)
-;;                                   (evaluate (free 4) id/id-m)))
-;;           (println :flat-map-3 (= (evaluate (flat-map (flat-map (free 4) f-inc) f-dbl) id/id-m)
-;;                                   (evaluate (flat-map (free 4) (fn [x] (flat-map (f-inc x) f-dbl))) id/id-m))))))
+(defn lift [x]
+  (free-monad (map x free)))
