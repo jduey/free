@@ -2,6 +2,10 @@
 (def free)
 (def free-app)
 
+(defprotocol FreeWrapper
+  (wrap-free [x]
+    (free x)))
+
 (defprotocol FreeEvaluate
   (evaluate [x eval-f]))
 
@@ -13,6 +17,9 @@
     (comp (list "<free-monad: ")
           (string-list v)
           (list ">")))
+
+  FreeWrapper
+  (wrap-free [x] x)
 
   FreeEvaluate
   (evaluate [_ f]
@@ -33,6 +40,9 @@
                          (flat-map y f))))))
 
 (deftype app-fn [v]
+  Stringable
+  (string-list [_] (list "<AppFn>"))
+
   FreeEvaluate
   (evaluate [_ f]
     (fn [& args]
@@ -53,10 +63,11 @@
   Stringable
   (string-list [_]
     (comp (list "<free-app: ")
-          (string-list v)
-          (list " (")
           (interpose (flat-map args string-list) " ")
-          (list ")>")))
+          (list ">")))
+
+  FreeWrapper
+  (wrap-free [x] x)
 
   FreeEvaluate
   (evaluate [_ f]
@@ -85,6 +96,9 @@
           (string-list v)
           (list ">")))
 
+  FreeWrapper
+  (wrap-free [x] x)
+
   FreeEvaluate
   (evaluate [_ eval-f]
     (eval-f v))
@@ -99,4 +113,4 @@
     (f v)))
 
 (defn lift [x]
-  (free-monad (map x free)))
+  (free-monad (map x wrap-free)))
