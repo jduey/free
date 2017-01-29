@@ -1,10 +1,10 @@
 
-(def free)
+(def pure)
 (def free-app)
 
 (defprotocol FreeWrapper
   (wrap-free [x]
-    (free x)))
+    (pure x)))
 
 (defprotocol FreeEvaluate
   (evaluate [x eval-f]))
@@ -28,11 +28,11 @@
 
   Container
   (map [fv f]
-    (free-app (free f) (list fv))
+    (free-app (pure f) (list fv))
     ;; (free-monad (map v (fn [y]
-    ;;                      (free (evaluate y f)))))
+    ;;                      (pure (evaluate y f)))))
     )
-  (wrap [_ v] (free v))
+  (wrap [_ v] (pure v))
   (apply* [f args]
     (free-app f args))
   (flat-map [_ f]
@@ -81,7 +81,7 @@
                        (fn [& args]
                          (f (apply g args)))))
               args))
-  (wrap [_ v] (free v))
+  (wrap [_ v] (pure v))
   (apply* [f args]
     (free-app f args))
   (flat-map [fv f]
@@ -89,10 +89,10 @@
                         (f (apply fx xs))))
               (cons v args))))
 
-(deftype free [v]
+(deftype pure [v]
   Stringable
   (string-list [_]
-    (comp (list "<free: ")
+    (comp (list "<pure: ")
           (string-list v)
           (list ">")))
 
@@ -105,8 +105,8 @@
 
   Container
   (map [fv f]
-    (free-app (free f) (list fv)))
-  (wrap [_ v] (free v))
+    (free-app (pure f) (list fv)))
+  (wrap [_ v] (pure v))
   (apply* [f args]
     (free-app f args))
   (flat-map [_ f]
